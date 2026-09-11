@@ -7,6 +7,7 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
     PORT=8080
 
 # Install system dependencies
@@ -25,5 +26,5 @@ COPY . .
 # Expose HTTP port for AgentCore Runtime health checks and webhooks
 EXPOSE 8080
 
-# Entry point for AgentCore server / execution API
-CMD ["python", "-m", "ediflow.main"]
+# Entry point for the FastAPI execution API
+CMD ["python", "-m", "server"]
