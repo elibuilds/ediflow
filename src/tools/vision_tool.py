@@ -9,6 +9,16 @@ def process_produce_photo_ingestion(store_id: str, image_base64: str) -> str:
     Uses Amazon Bedrock Claude 3.5 Sonnet Vision capabilities to identify unpackaged 
     or unindexed food items (e.g., bakery trays, fresh fruit crates) from a store photo.
     """
+    if not store_id.strip():
+        raise ValueError("store_id must not be empty")
+    if not image_base64:
+        raise ValueError("image_base64 must not be empty")
+
+    try:
+        base64.b64decode(image_base64, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("image_base64 must contain valid base64 data") from exc
+
     bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-1")
     
     prompt = """
@@ -42,20 +52,23 @@ def process_produce_photo_ingestion(store_id: str, image_base64: str) -> str:
         ]
     }
     
+    response = bedrock_runtime.invoke_model(
+        modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        body=json.dumps(payload)
+    )
+    result = json.loads(response["body"].read())
+
     try:
-        response = bedrock_runtime.invoke_model(
-            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
-            body=json.dumps(payload)
-        )
-        result = json.loads(response["body"].read())
-        return result["content"][0]["text"]
-    except Exception as e:
-        # Fallback response for offline or dev environments
-        return json.dumps({
-            "store_id": store_id,
-            "parsed_items": [
-                {"name": "Assorted Fresh Pastries Tray", "quantity": 12, "estimated_shelf_life_hours": 24},
-                {"name": "Ripe Bananas Crate", "quantity": 1, "estimated_units": 30, "estimated_shelf_life_hours": 36}
-            ],
-            "mode": "FALLBACK_MOCK"
-        })
+        model_text = result["content"][0]["text"]
+        parsed_result = json.loads(model_text)
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Bedrock returned an invalid vision response") from exc
+
+    if (
+        not isinstance(parsed_result, dict)
+        or parsed_result.get("store_id") != store_id
+        or not isinstance(parsed_result.get("parsed_items"), list)
+    ):
+        raise ValueError("Bedrock vision response did not match the required schema")
+
+    return json.dumps(parsed_result)
