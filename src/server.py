@@ -1,13 +1,17 @@
 import os
 import hashlib
 import hmac
+import logging
 import secrets
 import threading
 import time
+import uuid
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from typing import Dict, Optional
 from main import create_ediflow_agent
+
+logger = logging.getLogger("ediflow.server")
 
 app = FastAPI(
     title="EdiFlow Autonomous Rescue Agent API",
@@ -125,7 +129,12 @@ async def trigger_rescue_cycle(request: Request):
     except Exception as exc:
         with _security_lock:
             _idempotency_in_flight.discard(idempotency_key)
-        raise HTTPException(status_code=500, detail="Agent execution failed") from exc
+        error_id = uuid.uuid4().hex
+        logger.exception("Agent execution failed", extra={"error_id": error_id})
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Agent execution failed", "error_id": error_id},
+        ) from exc
 
     result = {
         "status": "SUCCESS",
