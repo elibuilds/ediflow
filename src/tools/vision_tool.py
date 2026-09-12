@@ -1,10 +1,13 @@
 import base64
 import json
+import os
 import boto3
 from strands import tool
 
 @tool
-def process_produce_photo_ingestion(store_id: str, image_base64: str) -> str:
+def process_produce_photo_ingestion(
+    store_id: str, image_base64: str, media_type: str = "image/jpeg"
+) -> str:
     """
     Uses Amazon Bedrock Claude 3.5 Sonnet Vision capabilities to identify unpackaged 
     or unindexed food items (e.g., bakery trays, fresh fruit crates) from a store photo.
@@ -14,12 +17,24 @@ def process_produce_photo_ingestion(store_id: str, image_base64: str) -> str:
     if not image_base64:
         raise ValueError("image_base64 must not be empty")
 
+    allowed_media_types = {"image/jpeg", "image/png", "image/webp"}
+    if media_type not in allowed_media_types:
+        raise ValueError("media_type must be image/jpeg, image/png, or image/webp")
+
     try:
-        base64.b64decode(image_base64, validate=True)
+        image_bytes = base64.b64decode(image_base64, validate=True)
     except (ValueError, TypeError) as exc:
         raise ValueError("image_base64 must contain valid base64 data") from exc
+    max_image_bytes = int(os.getenv("EDIFLOW_MAX_IMAGE_BYTES", "5242880"))
+    if len(image_bytes) > max_image_bytes:
+        raise ValueError("image exceeds the configured size limit")
 
-    bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-1")
+    region = os.getenv("AWS_REGION", "us-east-1")
+    model_id = os.getenv(
+        "EDIFLOW_VISION_MODEL_ID",
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    )
+    bedrock_runtime = boto3.client("bedrock-runtime", region_name=region)
     
     prompt = """
     Analyze this image from a local grocery store/bakery.
@@ -39,7 +54,7 @@ def process_produce_photo_ingestion(store_id: str, image_base64: str) -> str:
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/jpeg",
+                            "media_type": media_type,
                             "data": image_base64
                         }
                     },
@@ -53,7 +68,7 @@ def process_produce_photo_ingestion(store_id: str, image_base64: str) -> str:
     }
     
     response = bedrock_runtime.invoke_model(
-        modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        modelId=model_id,
         body=json.dumps(payload)
     )
     result = json.loads(response["body"].read())
