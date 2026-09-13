@@ -10,6 +10,14 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from typing import Dict, Optional
+from db import (
+    get_store_summary as db_get_store_summary,
+    list_flash_sales as db_list_flash_sales,
+    reserve_flash_sale as db_reserve_flash_sale,
+    record_rescue_run,
+    sync_inventory_snapshot,
+)
+from integrations.ims import DemoIMSAdapter
 from main import create_ediflow_agent
 
 logger = logging.getLogger("ediflow.server")
@@ -46,50 +54,6 @@ class ReservationRequest(BaseModel):
     quantity: int
     resident_reference: str
 
-
-_flash_sales: Dict[str, dict] = {
-    "SALE-BREAD-01": {
-        "listing_id": "SALE-BREAD-01",
-        "store_id": "STORE-ACCRA-01",
-        "name": "Artisanal wheat loaf",
-        "store": "Corner Market · Main St.",
-        "distance": "0.8 km away",
-        "quantity_available": 15,
-        "sale_unit_price_usd": 1.20,
-        "original_unit_price_usd": 3.00,
-        "discount_percent": 60,
-        "expires_in": "Today · 6:30 PM",
-        "status": "PUBLISHED",
-    },
-    "SALE-FRUIT-02": {
-        "listing_id": "SALE-FRUIT-02",
-        "store_id": "STORE-GREEN-01",
-        "name": "Seasonal fruit basket",
-        "store": "Green Basket Foods",
-        "distance": "1.4 km away",
-        "quantity_available": 8,
-        "sale_unit_price_usd": 2.50,
-        "original_unit_price_usd": 5.00,
-        "discount_percent": 50,
-        "expires_in": "Tomorrow · 10:00 AM",
-        "status": "PUBLISHED",
-    },
-    "SALE-PASTRY-03": {
-        "listing_id": "SALE-PASTRY-03",
-        "store_id": "STORE-ACCRA-01",
-        "name": "Fresh pastry box",
-        "store": "Corner Market · Main St.",
-        "distance": "0.8 km away",
-        "quantity_available": 4,
-        "sale_unit_price_usd": 3.15,
-        "original_unit_price_usd": 7.00,
-        "discount_percent": 55,
-        "expires_in": "Tomorrow · 8:00 AM",
-        "status": "PUBLISHED",
-    },
-}
-_reservations: Dict[str, dict] = {}
-_rescue_counts: Dict[str, int] = {}
 
 _idempotency_results: Dict[str, dict] = {}
 _idempotency_in_flight: set[str] = set()
@@ -172,14 +136,15 @@ def health_check():
 @app.get("/api/v1/flash-sales")
 def list_flash_sales(store_id: Optional[str] = None):
     """List currently published neighborhood flash-sale inventory."""
-    with _security_lock:
-        listings = [
-            sale.copy()
-            for sale in _flash_sales.values()
-            if sale["status"] == "PUBLISHED"
-            and (store_id is None or sale["store_id"] == store_id)
-        ]
-    return {"listings": listings}
+    try:
+        return {"listings": db_list_flash_sales(store_id)}
+    except Exception as exc:
+        error_id = uuid.uuid4().hex
+        logger.exception("Flash-sale listing lookup failed", extra={"error_id": error_id})
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Flash-sale service unavailable", "error_id": error_id},
+        ) from exc
 
 
 @app.post("/api/v1/flash-sales/{listing_id}/reservations")
@@ -190,43 +155,31 @@ def reserve_flash_sale(listing_id: str, reservation: ReservationRequest):
     if not reservation.resident_reference.strip():
         raise HTTPException(status_code=400, detail="resident_reference is required")
 
-    with _security_lock:
-        sale = _flash_sales.get(listing_id)
-        if sale is None or sale["status"] != "PUBLISHED":
-            raise HTTPException(status_code=404, detail="Flash-sale listing not found")
-        if reservation.quantity > sale["quantity_available"]:
-            raise HTTPException(status_code=409, detail="Not enough inventory available")
-
-        sale["quantity_available"] -= reservation.quantity
-        if sale["quantity_available"] == 0:
-            sale["status"] = "SOLD_OUT"
-        reservation_id = f"RES-{uuid.uuid4().hex[:12].upper()}"
-        result = {
-            "reservation_id": reservation_id,
-            "listing_id": listing_id,
-            "quantity": reservation.quantity,
-            "resident_reference": reservation.resident_reference,
-            "status": "CONFIRMED",
-        }
-        _reservations[reservation_id] = result
-        return result
+    try:
+        return db_reserve_flash_sale(
+            listing_id, reservation.quantity, reservation.resident_reference
+        )
+    except Exception as exc:
+        message = str(exc)
+        if "Not enough inventory" in message:
+            raise HTTPException(status_code=409, detail=message) from exc
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=500, detail="Reservation failed") from exc
 
 
 @app.get("/api/v1/stores/{store_id}/summary")
 def store_summary(store_id: str):
     """Return the store metrics needed by the store-owner workspace."""
-    with _security_lock:
-        listings = [
-            sale for sale in _flash_sales.values() if sale["store_id"] == store_id
-        ]
-        on_sale = sum(sale["quantity_available"] for sale in listings)
-        rescued = _rescue_counts.get(store_id, 0)
-    return {
-        "store_id": store_id,
-        "items_scanned_today": rescued + on_sale,
-        "items_rescued": rescued,
-        "items_on_flash_sale": on_sale,
-    }
+    try:
+        return db_get_store_summary(store_id)
+    except Exception as exc:
+        error_id = uuid.uuid4().hex
+        logger.exception("Store summary lookup failed", extra={"error_id": error_id})
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Store summary unavailable", "error_id": error_id},
+        ) from exc
 
 @app.post("/api/v1/trigger-rescue", dependencies=[Depends(require_request_security)])
 async def trigger_rescue_cycle(request: Request):
@@ -243,6 +196,19 @@ async def trigger_rescue_cycle(request: Request):
         if idempotency_key in _idempotency_in_flight:
             raise HTTPException(status_code=409, detail="Request is already in progress")
         _idempotency_in_flight.add(idempotency_key)
+
+    try:
+        snapshot = DemoIMSAdapter().fetch_inventory(rescue_request.store_id, 10)
+        sync_inventory_snapshot(snapshot.__dict__)
+    except Exception as exc:
+        error_id = uuid.uuid4().hex
+        logger.exception("IMS synchronization failed", extra={"error_id": error_id})
+        with _security_lock:
+            _idempotency_in_flight.discard(idempotency_key)
+        raise HTTPException(
+            status_code=502,
+            detail={"message": "Inventory synchronization failed", "error_id": error_id},
+        ) from exc
 
     instruction = (
         f"Process short-dated inventory for store {rescue_request.store_id} "
@@ -265,12 +231,22 @@ async def trigger_rescue_cycle(request: Request):
         "store_id": rescue_request.store_id,
         "agent_output": str(response),
     }
+    try:
+        record_rescue_run(
+            rescue_request.store_id, idempotency_key, result["agent_output"]
+        )
+    except Exception as exc:
+        with _security_lock:
+            _idempotency_in_flight.discard(idempotency_key)
+        error_id = uuid.uuid4().hex
+        logger.exception("Rescue run persistence failed", extra={"error_id": error_id})
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Rescue result could not be persisted", "error_id": error_id},
+        ) from exc
     with _security_lock:
         _idempotency_in_flight.discard(idempotency_key)
         _idempotency_results[idempotency_key] = result
-        _rescue_counts[rescue_request.store_id] = (
-            _rescue_counts.get(rescue_request.store_id, 0) + 1
-        )
     return result
 
 if __name__ == "__main__":

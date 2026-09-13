@@ -2,6 +2,7 @@
 import json
 import uuid
 from strands import tool
+from integrations.ims import DemoIMSAdapter, inventory_json
 
 @tool
 def fetch_ims_short_dated_inventory(store_id: str, days_threshold: int = 10) -> str:
@@ -9,49 +10,7 @@ def fetch_ims_short_dated_inventory(store_id: str, days_threshold: int = 10) -> 
     Connects to the store's POS/IMS backend (e.g., Shopify, Square, Odoo API)
     and fetches all registered SKUs with expiration dates within the specified threshold.
     """
-    if not store_id.strip():
-        raise ValueError("store_id must not be empty")
-    if days_threshold < 0:
-        raise ValueError("days_threshold must be non-negative")
-
-    # Simulated POS/IMS batch payload from local store database
-    mock_ims_data = {
-        "store_id": store_id,
-        "store_name": "Corner Market - Main St.",
-        "location": {"lat": 5.6037, "lng": -0.1870},
-        "inventory": [
-            {
-                "sku": "DAIRY-MILK-1L",
-                "name": "Fresh Whole Milk 1L",
-                "quantity": 24,
-                "expires_in_days": 5,
-                "refrigeration_required": True,
-                "unit_price_usd": 2.50
-            },
-            {
-                "sku": "BAKERY-BREAD-01",
-                "name": "Artisanal Wheat Loaf",
-                "quantity": 15,
-                "expires_in_days": 8,
-                "refrigeration_required": False,
-                "unit_price_usd": 3.00
-            },
-            {
-                "sku": "PRODUCE-APPLES-BAG",
-                "name": "Red Apples 1kg Bag",
-                "quantity": 10,
-                "expires_in_days": 4,
-                "refrigeration_required": False,
-                "unit_price_usd": 4.00
-            }
-        ]
-    }
-    mock_ims_data["inventory"] = [
-        item
-        for item in mock_ims_data["inventory"]
-        if item["expires_in_days"] <= days_threshold
-    ]
-    return json.dumps(mock_ims_data)
+    return inventory_json(DemoIMSAdapter(), store_id, days_threshold)
 
 
 @tool

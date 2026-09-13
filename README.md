@@ -30,11 +30,42 @@ $env:PYTHONPATH = "src"
 $env:EDIFLOW_API_KEY = "demo-api-key"
 $env:EDIFLOW_ALLOWED_STORE_IDS = "STORE-ACCRA-01"
 $env:EDIFLOW_WEBHOOK_SECRET = "demo-webhook-secret"
+$env:SUPABASE_URL = "https://your-project.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY = "server-only-service-role-key"
 .\.venv\Scripts\python.exe -m server
 ```
 
+### Supabase setup
+
+Create a hosted Supabase project, then apply
+[`supabase/migrations/0001_initial_schema.sql`](./supabase/migrations/0001_initial_schema.sql)
+using the Supabase SQL editor or the Supabase CLI. Keep the service-role key only in
+the FastAPI deployment environment; never expose it to the browser or commit it.
+The rescue endpoint synchronizes the normalized IMS snapshot, publishes 6–10 day
+items as flash-sale listings, and records completed rescue runs. Reservations use
+the `reserve_flash_sale` Postgres function so concurrent requests cannot oversell a
+listing.
+
 `GET /health` is public. The rescue endpoint requires the signed request
 headers described in [docs/api-contracts.md](docs/api-contracts.md).
+
+## Start the client
+
+In a second terminal:
+
+```powershell
+Set-Location client
+$env:NEXT_PUBLIC_EDIFLOW_BACKEND_URL = "http://127.0.0.1:8080"
+$env:EDIFLOW_BACKEND_URL = "http://127.0.0.1:8080"
+$env:EDIFLOW_API_KEY = "demo-api-key"
+$env:EDIFLOW_WEBHOOK_SECRET = "demo-webhook-secret"
+npm install
+npm run dev
+```
+
+The resident workspace loads flash-sale listings and submits reservations to
+the FastAPI backend. The store workspace loads live summary metrics and
+triggers the signed rescue endpoint through the Next.js server-side proxy.
 
 ## Deploying the AgentCore Runtime
 
