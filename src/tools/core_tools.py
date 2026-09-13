@@ -1,6 +1,7 @@
 #defined tools for agent calling
 import json
 import uuid
+from typing import Any
 from strands import tool
 from integrations.ims import DemoIMSAdapter, inventory_json
 
@@ -14,13 +15,12 @@ def fetch_ims_short_dated_inventory(store_id: str, days_threshold: int = 10) -> 
 
 
 @tool
-def publish_flash_sale(store_id: str, items_json: str) -> str:
+def publish_flash_sale(store_id: str, items: list[dict[str, Any]]) -> str:
     """Publishes a local flash-sale listing for items expiring in 6-10 days."""
     if not store_id.strip():
         raise ValueError("store_id must not be empty")
-    items = json.loads(items_json)
     if not isinstance(items, list) or not items:
-        raise ValueError("items_json must contain a non-empty item list")
+        raise ValueError("items must contain a non-empty item list")
     if any(
         item.get("expires_in_days") is None
         or not 6 <= item["expires_in_days"] <= 10
@@ -50,20 +50,19 @@ def publish_flash_sale(store_id: str, items_json: str) -> str:
     return json.dumps({"store_id": store_id, "listings": listings})
 
 @tool
-def check_pantry_capacity_and_match(items_json: str) -> str:
+def check_pantry_capacity_and_match(
+    inventory: list[dict[str, Any]],
+    store_id: str | None = None,
+    store_name: str = "Unknown store",
+    pickup_location: dict[str, float] | None = None,
+) -> str:
     """
     Evaluates perishable donation items against registered community pantries,
     checking cold-storage capacity, active operating hours, and urgency.
     """
-    payload = json.loads(items_json)
-    if isinstance(payload, dict):
-        items = payload.get("inventory", [])
-        store = payload
-    else:
-        items = payload
-        store = {}
-    if not isinstance(items, list) or not items:
-        raise ValueError("items_json must contain a non-empty item list")
+    items = inventory
+    if not items:
+        raise ValueError("inventory must contain a non-empty item list")
     
     # Mock registry of local community pantries & cold-storage states
     pantry_registry = [
@@ -103,21 +102,21 @@ def check_pantry_capacity_and_match(items_json: str) -> str:
     match_results = {
         "allocated_pantry": matching_pantry,
         "assigned_items": items,
-        "store_id": store.get("store_id"),
-        "store_name": store.get("store_name", "Unknown store"),
-        "pickup_location": store.get("location"),
+        "store_id": store_id,
+        "store_name": store_name,
+        "pickup_location": pickup_location,
         "pickup_urgency": "HIGH" if any(i.get("expires_in_days", 5) <= 5 for i in items) else "MEDIUM"
     }
     
     return json.dumps(match_results)
 
 @tool
-def dispatch_volunteer_pickup(pantry_match_json: str) -> str:
+def dispatch_volunteer_pickup(pantry_match: dict[str, Any]) -> str:
     """
     Generates dispatch orders, creates an optimal route, and sends SMS/WhatsApp
     notifications to verified local volunteer drivers for physical pickup.
     """
-    match = json.loads(pantry_match_json)
+    match = pantry_match
     
     assigned_items = match.get("assigned_items", [])
     total_units = sum(item.get("quantity", 0) for item in assigned_items)

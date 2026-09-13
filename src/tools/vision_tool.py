@@ -32,7 +32,7 @@ def process_produce_photo_ingestion(
     region = os.getenv("AWS_REGION", "us-east-1")
     model_id = os.getenv(
         "EDIFLOW_VISION_MODEL_ID",
-        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0"),
     )
     bedrock_runtime = boto3.client("bedrock-runtime", region_name=region)
     
