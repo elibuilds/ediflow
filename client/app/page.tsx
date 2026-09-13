@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Sale = {
   listing_id: string;
+  store_id: string;
   name: string;
   store: string;
   distance: string;
@@ -14,63 +15,110 @@ type Sale = {
   expires_in: string;
 };
 
-const demoSales: Sale[] = [
-  {
-    listing_id: "SALE-BREAD-01",
-    name: "Artisanal wheat loaf",
-    store: "Corner Market · Main St.",
-    distance: "0.8 km away",
-    quantity_available: 15,
-    sale_unit_price_usd: 1.2,
-    original_unit_price_usd: 3,
-    discount_percent: 60,
-    expires_in: "Today · 6:30 PM"
-  },
-  {
-    listing_id: "SALE-FRUIT-02",
-    name: "Seasonal fruit basket",
-    store: "Green Basket Foods",
-    distance: "1.4 km away",
-    quantity_available: 8,
-    sale_unit_price_usd: 2.5,
-    original_unit_price_usd: 5,
-    discount_percent: 50,
-    expires_in: "Tomorrow · 10:00 AM"
-  },
-  {
-    listing_id: "SALE-PASTRY-03",
-    name: "Fresh pastry box",
-    store: "Corner Market · Main St.",
-    distance: "0.8 km away",
-    quantity_available: 4,
-    sale_unit_price_usd: 3.15,
-    original_unit_price_usd: 7,
-    discount_percent: 55,
-    expires_in: "Tomorrow · 8:00 AM"
-  }
-];
+type StoreSummary = {
+  items_scanned_today: number;
+  items_rescued: number;
+  items_on_flash_sale: number;
+};
+
+const backendUrl =
+  process.env.NEXT_PUBLIC_EDIFLOW_BACKEND_URL ?? "http://127.0.0.1:8080";
 
 export default function Home() {
   const [activeView, setActiveView] = useState<"resident" | "store">("resident");
-  const [sales, setSales] = useState(demoSales);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [reserved, setReserved] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [summary, setSummary] = useState<StoreSummary | null>(null);
 
-  function reserveSale(sale: Sale) {
-    if (reserved.includes(sale.listing_id)) return;
-    setReserved((current) => [...current, sale.listing_id]);
-    setSales((current) =>
-      current.map((item) =>
-        item.listing_id === sale.listing_id
-          ? { ...item, quantity_available: item.quantity_available - 1 }
-          : item
-      )
-    );
-    setNotice(`${sale.name} reserved. We saved one for you at ${sale.store}.`);
+  useEffect(() => {
+    void loadSales();
+    void loadSummary();
+  }, []);
+
+  async function loadSales() {
+    try {
+      const response = await fetch(`${backendUrl}/api/v1/flash-sales`);
+      if (!response.ok) throw new Error("Unable to load flash sales");
+      const payload = (await response.json()) as { listings: Sale[] };
+      setSales(payload.listings);
+      setError("");
+    } catch {
+      setError("The rescue network is unavailable. Please try again shortly.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function triggerRescue() {
-    setNotice("Rescue request queued for Corner Market. The IMS feed will be checked next.");
+  async function loadSummary() {
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/v1/stores/STORE-ACCRA-01/summary`
+      );
+      if (!response.ok) throw new Error("Unable to load store summary");
+      setSummary((await response.json()) as StoreSummary);
+    } catch {
+      setError("The store workspace is unavailable. Please try again shortly.");
+    }
+  }
+
+  async function reserveSale(sale: Sale) {
+    if (reserved.includes(sale.listing_id)) return;
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/v1/flash-sales/${sale.listing_id}/reservations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            quantity: 1,
+            resident_reference: "demo-resident-01"
+          })
+        }
+      );
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) throw new Error(payload.detail ?? "Reservation failed");
+      setReserved((current) => [...current, sale.listing_id]);
+      await loadSales();
+      setNotice(`${sale.name} reserved. We saved one for you at ${sale.store}.`);
+    } catch (reservationError) {
+      setError(
+        reservationError instanceof Error
+          ? reservationError.message
+          : "Unable to reserve this rescue."
+      );
+    }
+  }
+
+  async function triggerRescue() {
+    try {
+      const response = await fetch("/api/rescue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store_id: "STORE-ACCRA-01" })
+      });
+      const payload = (await response.json()) as {
+        detail?: string | { message?: string };
+      };
+      if (!response.ok) {
+        const detail =
+          typeof payload.detail === "string"
+            ? payload.detail
+            : payload.detail?.message ?? "Rescue request failed";
+        throw new Error(detail);
+      }
+      setNotice("Rescue check completed. Inventory was routed by EdiFlow.");
+      await loadSales();
+      await loadSummary();
+    } catch (rescueError) {
+      setError(
+        rescueError instanceof Error
+          ? rescueError.message
+          : "Unable to run the rescue check."
+      );
+    }
   }
 
   return (
@@ -110,6 +158,7 @@ export default function Home() {
       </section>
 
       {notice && <div className="notice shell" role="status">{notice}<button onClick={() => setNotice("")}>Dismiss</button></div>}
+      {error && <div className="error-notice shell" role="alert">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
 
       {activeView === "resident" ? (
         <section className="shell content">
@@ -121,11 +170,12 @@ export default function Home() {
             <button className="text-button">⌖ Accra, Ghana <span>⌄</span></button>
           </div>
           <div className="filter-row">
-            <span className="result-count">{sales.length} fresh finds</span>
+            <span className="result-count">{loading ? "Loading fresh finds…" : `${sales.length} fresh finds`}</span>
             <button className="filter active-filter">All food <span>⌄</span></button>
             <button className="filter">Closest first <span>⌄</span></button>
           </div>
           <div className="sale-grid">
+            {!loading && sales.length === 0 && <p className="muted">No rescues are available right now.</p>}
             {sales.map((sale) => {
               const isReserved = reserved.includes(sale.listing_id);
               return (
@@ -159,9 +209,9 @@ export default function Home() {
             <span className="connected"><span /> IMS connected</span>
           </div>
           <div className="metric-grid">
-            <div className="metric"><span className="metric-icon">↗</span><strong>49</strong><span>items scanned today</span></div>
-            <div className="metric"><span className="metric-icon green">♥</span><strong>34</strong><span>items rescued</span></div>
-            <div className="metric"><span className="metric-icon orange">◷</span><strong>15</strong><span>on flash sale</span></div>
+            <div className="metric"><span className="metric-icon">↗</span><strong>{summary?.items_scanned_today ?? "—"}</strong><span>items scanned today</span></div>
+            <div className="metric"><span className="metric-icon green">♥</span><strong>{summary?.items_rescued ?? "—"}</strong><span>items rescued</span></div>
+            <div className="metric"><span className="metric-icon orange">◷</span><strong>{summary?.items_on_flash_sale ?? "—"}</strong><span>on flash sale</span></div>
           </div>
           <div className="store-actions">
             <div><p className="eyebrow">NEXT ACTION</p><h3>Check today&apos;s short-dated inventory</h3><p className="muted">EdiFlow will route items to a pantry or publish a neighborhood sale.</p></div>
