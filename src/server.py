@@ -1,4 +1,5 @@
 import os
+import json
 import hashlib
 import hmac
 import logging
@@ -22,6 +23,7 @@ from db import (
 from integrations.ims import DemoIMSAdapter
 from main import create_ediflow_agent
 from routing import classify_inventory
+from tools.vision_tool import process_produce_photo_ingestion
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -59,6 +61,13 @@ class ReservationRequest(BaseModel):
 
     quantity: int
     resident_reference: str
+
+
+class VisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: str
+    media_type: str = "image/jpeg"
 
 
 _idempotency_results: Dict[str, dict] = {}
@@ -197,6 +206,35 @@ def health_check():
 def current_store(store_user: dict = Depends(require_store_user)):
     """Return the store resolved from the authenticated Supabase user."""
     return store_user
+
+
+@app.post("/api/v1/vision/parse")
+def parse_store_photo(
+    vision_request: VisionRequest,
+    store_user: dict = Depends(require_store_user),
+):
+    """Parse a store photo into candidate inventory items using Bedrock vision."""
+    try:
+        parsed = process_produce_photo_ingestion(
+            store_user["store_id"],
+            vision_request.image_base64,
+            vision_request.media_type,
+        )
+        return json.loads(parsed)
+    except (ValueError, json.JSONDecodeError) as exc:
+        error_id = uuid.uuid4().hex
+        logger.warning("Vision photo parsing failed", extra={"error_id": error_id})
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Photo could not be parsed", "error_id": error_id},
+        ) from exc
+    except Exception as exc:
+        error_id = uuid.uuid4().hex
+        logger.exception("Vision service failed", extra={"error_id": error_id})
+        raise HTTPException(
+            status_code=502,
+            detail={"message": "Vision service unavailable", "error_id": error_id},
+        ) from exc
 
 
 @app.get("/api/v1/demo-ims/inventory")
