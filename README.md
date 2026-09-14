@@ -286,7 +286,7 @@ $env:AWS_PROFILE = "ediflow"
 $env:AWS_REGION = "us-east-1"
 $env:AGENTCORE_CONTAINER_URI = "123456789012.dkr.ecr.us-east-1.amazonaws.com/ediflow:latest"
 $env:AGENTCORE_ROLE_ARN = "arn:aws:iam::123456789012:role/EdiFlowAgentCoreRuntime"
-$env:AGENTCORE_RUNTIME_NAME = "ediflow-good-neighbor"
+$env:AGENTCORE_RUNTIME_NAME = "ediflow_good_neighbor"
 $env:AGENTCORE_ENDPOINT_NAME = "production"
 $env:PYTHONPATH = "src"
 

@@ -36,23 +36,32 @@ export default function Settings() {
     const stored = localStorage.getItem("ediflow-store-settings");
 
     if (stored) {
-      const settings = JSON.parse(stored) as StoredSettings;
+      try {
+        const settings = JSON.parse(stored) as StoredSettings;
 
-      if (settings.provider) setProvider(settings.provider);
-      if (settings.endpoint) setEndpoint(settings.endpoint);
-      if (settings.location) setLocation(settings.location);
-      if (settings.autoSync !== undefined) setAutoSync(settings.autoSync);
-      if (settings.approvalBeforePantry !== undefined) {
-        setApprovalBeforePantry(settings.approvalBeforePantry);
+        if (settings.provider) setProvider(settings.provider);
+        if (settings.endpoint) setEndpoint(settings.endpoint);
+        if (settings.location) setLocation(settings.location);
+        if (settings.autoSync !== undefined) setAutoSync(settings.autoSync);
+        if (settings.approvalBeforePantry !== undefined) {
+          setApprovalBeforePantry(settings.approvalBeforePantry);
+        }
+        if (settings.approvalBeforeFlashSale !== undefined) {
+          setApprovalBeforeFlashSale(settings.approvalBeforeFlashSale);
+        }
+        if (settings.syncFrequency) setSyncFrequency(settings.syncFrequency);
+        if (settings.minimumUnits) setMinimumUnits(settings.minimumUnits);
+      } catch {
+        localStorage.removeItem("ediflow-store-settings");
       }
-      if (settings.approvalBeforeFlashSale !== undefined) {
-        setApprovalBeforeFlashSale(settings.approvalBeforeFlashSale);
-      }
-      if (settings.syncFrequency) setSyncFrequency(settings.syncFrequency);
-      if (settings.minimumUnits) setMinimumUnits(settings.minimumUnits);
     }
 
-    void supabase?.auth.getSession().then(({ data }) => {
+    if (!supabase) {
+      window.location.href = "/login";
+      return;
+    }
+
+    void supabase.auth.getSession().then(({ data }) => {
       if (!data.session) {
         window.location.href = "/login";
         return;
