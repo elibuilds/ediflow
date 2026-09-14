@@ -15,6 +15,13 @@ def get_supabase() -> Client:
     return create_client(url, key)
 
 
+def get_store_membership(user_id: str) -> dict[str, Any] | None:
+    rows = get_supabase().table("store_memberships").select(
+        "user_id, store_id, role, status, stores(name)"
+    ).eq("user_id", user_id).eq("status", "ACTIVE").limit(1).execute().data
+    return rows[0] if rows else None
+
+
 def list_flash_sales(store_id: str | None = None) -> list[dict[str, Any]]:
     query = get_supabase().table("flash_sale_listings").select(
         "*, stores(name)"

@@ -52,6 +52,20 @@ After the initial schema, apply
 It adds database-backed pantry capacity, allocations, volunteers, and dispatch
 state, and seeds the local demo pantry and volunteer records.
 
+Apply [`supabase/migrations/0003_store_auth.sql`](./supabase/migrations/0003_store_auth.sql)
+to enable store memberships. Configure the client with
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Create a user in
+the client, then assign that user's UUID to a store in Supabase:
+
+```sql
+insert into public.store_memberships (user_id, store_id, role)
+values ('AUTH-USER-UUID', 'STORE-ACCRA-01', 'OWNER');
+```
+
+Only users with an active membership can access store summaries or trigger a
+rescue. The backend resolves the store from the authenticated Supabase user;
+the browser cannot choose an arbitrary store ID.
+
 `GET /health` is public. The rescue endpoint requires the signed request
 headers described in [docs/api-contracts.md](docs/api-contracts.md).
 
