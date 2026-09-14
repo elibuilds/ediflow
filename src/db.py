@@ -219,7 +219,7 @@ def _rescued_item_count(client: Client, store_id: str) -> int:
 
 
 def sync_inventory_snapshot(snapshot: dict[str, Any]) -> None:
-    """Persist a normalized IMS snapshot and publish its flash-sale items."""
+    """Persist a normalized IMS snapshot without publishing side effects."""
     client = get_supabase()
     store_id = snapshot["store_id"]
     client.table("stores").upsert(
@@ -231,34 +231,10 @@ def sync_inventory_snapshot(snapshot: dict[str, Any]) -> None:
         }
     ).execute()
     for item in snapshot["inventory"]:
-        inventory = client.table("inventory_items").upsert(
+        client.table("inventory_items").upsert(
             {**item, "store_id": store_id, "source": "ims"},
             on_conflict="store_id,sku",
         ).execute().data[0]
-        if 6 <= item["expires_in_days"] <= 10:
-            existing = client.table("flash_sale_listings").select("id").eq(
-                "store_id", store_id
-            ).eq("sku", item["sku"]).eq("status", "PUBLISHED").execute().data
-            if not existing:
-                discount = 50 + round((10 - item["expires_in_days"]) * 5)
-                client.table("flash_sale_listings").insert(
-                    {
-                        "store_id": store_id,
-                        "inventory_item_id": inventory["id"],
-                        "sku": item["sku"],
-                        "name": item["name"],
-                        "quantity_available": item["quantity"],
-                        "original_unit_price_usd": item["unit_price_usd"],
-                        "sale_unit_price_usd": round(
-                            item["unit_price_usd"] * (1 - discount / 100), 2
-                        ),
-                        "discount_percent": discount,
-                        "expires_at": (
-                            datetime.now(timezone.utc)
-                            + timedelta(days=item["expires_in_days"])
-                        ).isoformat(),
-                    }
-                ).execute()
 
 
 def record_rescue_run(

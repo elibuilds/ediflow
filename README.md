@@ -3,7 +3,7 @@
 EdiFlow is a Strands Agents prototype for rescuing short-dated store inventory.
 The target flow is:
 
-1. A store IMS sends a signed rescue trigger.
+1. A store owner signs in, or a store IMS sends a signed rescue trigger.
 2. Inventory is classified by remaining shelf life.
 3. Items with 0–5 days remaining are matched to a pantry and dispatched.
 4. Items with 6–10 days remaining are published as resident flash-sale
@@ -66,8 +66,10 @@ Only users with an active membership can access store summaries or trigger a
 rescue. The backend resolves the store from the authenticated Supabase user;
 the browser cannot choose an arbitrary store ID.
 
-`GET /health` is public. The rescue endpoint requires the signed request
-headers described in [docs/api-contracts.md](docs/api-contracts.md).
+`GET /health` is public. Authenticated store-browser requests use a Supabase
+Bearer token and derive the store from `store_memberships`. External IMS
+webhooks continue to use the signed request headers described in
+[docs/api-contracts.md](docs/api-contracts.md).
 
 ## Start the client
 
@@ -83,9 +85,12 @@ npm install
 npm run dev
 ```
 
-The resident workspace loads flash-sale listings and submits reservations to
-the FastAPI backend. The store workspace loads live summary metrics and
-triggers the signed rescue endpoint through the Next.js server-side proxy.
+The public home page loads flash-sale listings and submits reservations to the
+FastAPI backend. Store owners use `/login`, `/dashboard`, and `/settings`.
+The dashboard loads live summary metrics and triggers the authenticated rescue
+endpoint through the Next.js server-side proxy. The settings controls are
+currently demo-only browser preferences; they do not yet configure a deployed
+IMS adapter or background scheduler.
 
 ## Deploying the AgentCore Runtime
 
@@ -100,7 +105,7 @@ Configure AWS credentials with permission to use the
 $env:AWS_REGION = "us-east-1"
 $env:AGENTCORE_CONTAINER_URI = "123456789012.dkr.ecr.us-east-1.amazonaws.com/ediflow:latest"
 $env:AGENTCORE_ROLE_ARN = "arn:aws:iam::123456789012:role/EdiFlowAgentCoreRuntime"
-$env:AGENTCORE_RUNTIME_NAME = "ediflow-good-neighbor"
+$env:AGENTCORE_RUNTIME_NAME = "ediflow_good_neighbor"
 $env:AGENTCORE_ENDPOINT_NAME = "production"
 ```
 
@@ -110,6 +115,11 @@ Run the deployment from the repository root:
 $env:PYTHONPATH = "src"
 python src/deploy_agentcore.py
 ```
+
+Runtime creation is asynchronous. The deployment script waits for the selected
+runtime version to reach `READY` before creating or updating its endpoint. The
+default wait timeout is 15 minutes; override it with
+`AGENTCORE_READY_TIMEOUT_SECONDS` if the image takes longer to provision.
 
 The script creates or updates the named AgentCore Runtime and creates or
 updates its endpoint. It prints the runtime ID, version, and endpoint ARN only

@@ -1,7 +1,10 @@
 import os
+import time
 from typing import Any
-
 import boto3
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 DESCRIPTION = "Autonomous Food Rescue & Multi-Pantry Dispatcher for Good Neighbor Track"
@@ -17,7 +20,7 @@ def _required_setting(name: str) -> str:
 def _runtime_config() -> dict[str, Any]:
     return {
         "agentRuntimeName": os.getenv(
-            "AGENTCORE_RUNTIME_NAME", "ediflow-good-neighbor"
+            "AGENTCORE_RUNTIME_NAME", "ediflow_good_neighbor"
         ),
         "agentRuntimeArtifact": {
             "containerConfiguration": {
@@ -51,6 +54,38 @@ def _find_endpoint(client: Any, runtime_id: str, name: str) -> dict[str, Any] | 
     return None
 
 
+def _wait_for_runtime_ready(
+    client: Any, runtime_id: str, runtime_version: str
+) -> None:
+    """Wait for the requested runtime version before creating its endpoint."""
+    timeout_seconds = int(os.getenv("AGENTCORE_READY_TIMEOUT_SECONDS", "900"))
+    poll_seconds = int(os.getenv("AGENTCORE_READY_POLL_SECONDS", "15"))
+    deadline = time.monotonic() + timeout_seconds
+
+    while time.monotonic() < deadline:
+        runtime = client.get_agent_runtime(agentRuntimeId=runtime_id)
+        status = runtime.get("status", "")
+        current_version = runtime.get("agentRuntimeVersion", runtime_version)
+        print(
+            f"Waiting for AgentCore runtime {runtime_id} "
+            f"version {current_version}: {status or 'UNKNOWN'}"
+        )
+        if current_version == runtime_version and status == "READY":
+            return
+        if status in {"FAILED", "DELETING", "DELETE_FAILED"}:
+            failure_reason = runtime.get("failureReason")
+            raise RuntimeError(
+                f"AgentCore runtime version {runtime_version} entered {status}"
+                + (f": {failure_reason}" if failure_reason else "")
+            )
+        time.sleep(poll_seconds)
+
+    raise TimeoutError(
+        f"AgentCore runtime version {runtime_version} did not become READY "
+        f"within {timeout_seconds} seconds"
+    )
+
+
 def deploy_to_agentcore() -> dict[str, str]:
     """Create or update an AgentCore Runtime and its invocation endpoint.
 
@@ -81,6 +116,7 @@ def deploy_to_agentcore() -> dict[str, str]:
         action = "created"
 
     runtime_version = runtime["agentRuntimeVersion"]
+    _wait_for_runtime_ready(client, runtime_id, runtime_version)
     endpoint = _find_endpoint(client, runtime_id, endpoint_name)
     if endpoint:
         endpoint_result = client.update_agent_runtime_endpoint(

@@ -7,7 +7,20 @@ without changing the rescue workflow.
 
 ## Authentication and signing
 
-Side-effecting store requests use:
+There are two supported side-effecting request paths:
+
+1. Authenticated store dashboard requests.
+2. External IMS webhook requests.
+
+Store dashboard requests use:
+
+- `Authorization: Bearer <Supabase access token>`.
+- `Idempotency-Key`.
+
+The API validates the Supabase user and resolves the store through
+`store_memberships`; the browser must not submit an arbitrary `store_id`.
+
+External IMS webhook requests use:
 
 - `X-API-Key`: service credential.
 - `X-Webhook-Timestamp`: Unix timestamp in seconds.
@@ -117,9 +130,36 @@ the store-owner workspace:
 }
 ```
 
-The store workspace triggers the signed IMS rescue endpoint through the
-Next.js server-side proxy. Browser clients never receive the API key or webhook
-secret.
+The store workspace triggers the authenticated rescue endpoint through the
+Next.js server-side proxy. Browser clients never receive the service API key
+or webhook secret. The signed webhook path remains available for external IMS
+systems and scheduled integrations.
+
+## Store photo ingestion
+
+`POST /api/v1/vision/parse`
+
+This authenticated store-owner endpoint accepts a browser-safe Base64 image
+and returns candidate items identified by the configured Bedrock vision model.
+The store is resolved from the Supabase bearer token; clients do not submit a
+store ID.
+
+```json
+{
+  "image_base64": "<base64 image bytes>",
+  "media_type": "image/jpeg"
+}
+```
+
+Supported media types are `image/jpeg`, `image/png`, and `image/webp`. The
+response contains the authenticated store ID and parsed item names,
+quantities, and estimated shelf-life hours. Parsed items are candidates for
+review and are not automatically written to IMS inventory.
+
+Inventory synchronization only upserts the raw `inventory_items` snapshot.
+The authenticated agent's `publish_flash_sale` action is the sole path that
+creates `flash_sale_listings`, so failed or unapproved rescue runs do not
+publish listings as a synchronization side effect.
 
 ## Pantry and volunteer callbacks
 
