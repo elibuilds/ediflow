@@ -68,7 +68,7 @@ payloads. A future adapter must normalize vendor data into:
 
 ## Resident flash-sale interface
 
-The resident-facing resource is:
+The planned resident-facing resource is:
 
 `GET /api/v1/flash-sales?store_id=STORE-ACCRA-01`
 
@@ -88,7 +88,7 @@ Each listing will expose:
 }
 ```
 
-Residents reserve through:
+Residents will reserve through:
 
 `POST /api/v1/flash-sales/{listing_id}/reservations`
 
@@ -102,24 +102,6 @@ Residents reserve through:
 Reservation state is one of `PENDING`, `CONFIRMED`, `FULFILLED`, `EXPIRED`,
 or `CANCELLED`. Inventory must be atomically reserved before returning
 `CONFIRMED`.
-
-## Store workspace
-
-`GET /api/v1/stores/{store_id}/summary` returns the aggregate metrics used by
-the store-owner workspace:
-
-```json
-{
-  "store_id": "STORE-ACCRA-01",
-  "items_scanned_today": 49,
-  "items_rescued": 34,
-  "items_on_flash_sale": 15
-}
-```
-
-The store workspace triggers the signed IMS rescue endpoint through the
-Next.js server-side proxy. Browser clients never receive the API key or webhook
-secret.
 
 ## Pantry and volunteer callbacks
 
