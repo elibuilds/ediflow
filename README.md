@@ -32,6 +32,7 @@ $env:EDIFLOW_ALLOWED_STORE_IDS = "STORE-ACCRA-01"
 $env:EDIFLOW_WEBHOOK_SECRET = "demo-webhook-secret"
 $env:SUPABASE_URL = "https://your-project.supabase.co"
 $env:SUPABASE_SERVICE_ROLE_KEY = "server-only-service-role-key"
+$env:BEDROCK_MODEL_ID = "amazon.nova-lite-v1:0"
 .\.venv\Scripts\python.exe -m server
 ```
 
@@ -45,6 +46,11 @@ The rescue endpoint synchronizes the normalized IMS snapshot, publishes 6–10 d
 items as flash-sale listings, and records completed rescue runs. Reservations use
 the `reserve_flash_sale` Postgres function so concurrent requests cannot oversell a
 listing.
+
+After the initial schema, apply
+[`supabase/migrations/0002_pantry_dispatch.sql`](./supabase/migrations/0002_pantry_dispatch.sql).
+It adds database-backed pantry capacity, allocations, volunteers, and dispatch
+state, and seeds the local demo pantry and volunteer records.
 
 `GET /health` is public. The rescue endpoint requires the signed request
 headers described in [docs/api-contracts.md](docs/api-contracts.md).

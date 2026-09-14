@@ -21,6 +21,12 @@ type StoreSummary = {
   items_on_flash_sale: number;
 };
 
+type RescueResult = {
+  status: string;
+  store_id: string;
+  agent_output: string;
+};
+
 const backendUrl =
   process.env.NEXT_PUBLIC_EDIFLOW_BACKEND_URL ?? "http://127.0.0.1:8080";
 
@@ -32,6 +38,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<StoreSummary | null>(null);
+  const [rescueResult, setRescueResult] = useState<RescueResult | null>(null);
 
   useEffect(() => {
     void loadSales();
@@ -99,7 +106,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ store_id: "STORE-ACCRA-01" })
       });
-      const payload = (await response.json()) as {
+      const payload = (await response.json()) as RescueResult & {
         detail?: string | { message?: string };
       };
       if (!response.ok) {
@@ -109,6 +116,7 @@ export default function Home() {
             : payload.detail?.message ?? "Rescue request failed";
         throw new Error(detail);
       }
+      setRescueResult(payload);
       setNotice("Rescue check completed. Inventory was routed by EdiFlow.");
       await loadSales();
       await loadSummary();
@@ -217,6 +225,15 @@ export default function Home() {
             <div><p className="eyebrow">NEXT ACTION</p><h3>Check today&apos;s short-dated inventory</h3><p className="muted">EdiFlow will route items to a pantry or publish a neighborhood sale.</p></div>
             <button className="primary-button" onClick={triggerRescue}>Run rescue check <span>→</span></button>
           </div>
+          {rescueResult && (
+            <div className="rescue-result" role="status">
+              <div className="rescue-result-heading">
+                <div><p className="eyebrow">LATEST RESCUE RESULT</p><h3>Agent actions completed</h3></div>
+                <span className="result-status">{rescueResult.status}</span>
+              </div>
+              <pre>{rescueResult.agent_output}</pre>
+            </div>
+          )}
           <div className="activity"><div><p className="eyebrow">RECENT ACTIVITY</p><p><span className="activity-dot green-dot" /> 24 milk units matched to Hope Community Pantry <small>12 min ago</small></p><p><span className="activity-dot orange-dot" /> 15 wheat loaves published for neighbors <small>18 min ago</small></p></div><button className="text-button">View all activity →</button></div>
         </section>
       )}

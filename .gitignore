@@ -5,3 +5,6 @@ pycache/
 
 node_modules
 .next
+
+.env
+.env.*

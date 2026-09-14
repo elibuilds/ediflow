@@ -19,6 +19,10 @@ from db import (
 )
 from integrations.ims import DemoIMSAdapter
 from main import create_ediflow_agent
+from routing import classify_inventory
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("ediflow.server")
 
@@ -199,6 +203,7 @@ async def trigger_rescue_cycle(request: Request):
 
     try:
         snapshot = DemoIMSAdapter().fetch_inventory(rescue_request.store_id, 10)
+        route = classify_inventory(snapshot.inventory)
         sync_inventory_snapshot(snapshot.__dict__)
     except Exception as exc:
         error_id = uuid.uuid4().hex
@@ -212,7 +217,11 @@ async def trigger_rescue_cycle(request: Request):
 
     instruction = (
         f"Process short-dated inventory for store {rescue_request.store_id} "
-        "and execute necessary rescue actions."
+        "and execute the provided deterministic rescue plan. "
+        f"Pantry items (0-5 days): {route['pantry_items']}. "
+        f"Flash-sale items (6-10 days): {route['flash_sale_items']}. "
+        f"Excluded items (>10 days): {route['excluded_items']}. "
+        "Do not move items between these categories."
     )
     try:
         response = agent(instruction)
@@ -226,10 +235,39 @@ async def trigger_rescue_cycle(request: Request):
             detail={"message": "Agent execution failed", "error_id": error_id},
         ) from exc
 
+    agent_output = str(response)
+    failed_output_markers = (
+        "i'm sorry",
+        "i am sorry",
+        "encountering an issue",
+        "tool call failed",
+        "unable to process",
+        "constraint violation",
+        "the error persists",
+        "failed due to",
+        "publishing failed",
+        "matching failed",
+        "report these issues",
+        "technical team",
+        "bypass",
+    )
+    if any(marker in agent_output.lower() for marker in failed_output_markers):
+        with _security_lock:
+            _idempotency_in_flight.discard(idempotency_key)
+        error_id = uuid.uuid4().hex
+        logger.error(
+            "Agent returned a failure response",
+            extra={"error_id": error_id, "agent_output": agent_output},
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={"message": "Rescue actions could not be completed", "error_id": error_id},
+        )
+
     result = {
         "status": "SUCCESS",
         "store_id": rescue_request.store_id,
-        "agent_output": str(response),
+        "agent_output": agent_output,
     }
     try:
         record_rescue_run(
@@ -252,4 +290,4 @@ async def trigger_rescue_cycle(request: Request):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, port=port)
