@@ -199,6 +199,18 @@ def current_store(store_user: dict = Depends(require_store_user)):
     return store_user
 
 
+@app.get("/api/v1/demo-ims/inventory")
+def demo_ims_inventory(store_id: str = "STORE-ACCRA-01", days_threshold: int = 10):
+    """Expose the deterministic demo IMS payload for integration demonstrations."""
+    if days_threshold < 0 or days_threshold > 30:
+        raise HTTPException(status_code=400, detail="days_threshold must be between 0 and 30")
+    try:
+        snapshot = DemoIMSAdapter().fetch_inventory(store_id, days_threshold)
+        return snapshot.__dict__
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/v1/flash-sales")
 def list_flash_sales(store_id: Optional[str] = None):
     """List currently published neighborhood flash-sale inventory."""
