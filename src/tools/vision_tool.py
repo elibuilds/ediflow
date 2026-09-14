@@ -9,8 +9,8 @@ def process_produce_photo_ingestion(
     store_id: str, image_base64: str, media_type: str = "image/jpeg"
 ) -> str:
     """
-    Uses Amazon Bedrock Claude 3.5 Sonnet Vision capabilities to identify unpackaged 
-    or unindexed food items (e.g., bakery trays, fresh fruit crates) from a store photo.
+    Uses an image-capable Amazon Bedrock model through the Converse API to identify
+    unpackaged or unindexed food items (e.g., bakery trays, fresh fruit crates).
     """
     if not store_id.strip():
         raise ValueError("store_id must not be empty")
@@ -42,39 +42,27 @@ def process_produce_photo_ingestion(
     Respond strictly in JSON format with keys: store_id, parsed_items (list of objects with name, quantity, estimated_shelf_life_hours).
     """
     
-    # Payload for Anthropic Claude 3.5 Sonnet on Bedrock
-    payload = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1000,
-        "messages": [
+    response = bedrock_runtime.converse(
+        modelId=model_id,
+        messages=[
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_base64
+                        "image": {
+                            "format": media_type.removeprefix("image/"),
+                            "source": {"bytes": image_bytes},
                         }
                     },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
+                    {"text": prompt},
+                ],
             }
-        ]
-    }
-    
-    response = bedrock_runtime.invoke_model(
-        modelId=model_id,
-        body=json.dumps(payload)
+        ],
+        inferenceConfig={"maxTokens": 1000},
     )
-    result = json.loads(response["body"].read())
 
     try:
-        model_text = result["content"][0]["text"]
+        model_text = response["output"]["message"]["content"][0]["text"]
         parsed_result = json.loads(model_text)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("Bedrock returned an invalid vision response") from exc

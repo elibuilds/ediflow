@@ -8,6 +8,8 @@ from tools.core_tools import (
     dispatch_volunteer_pickup
 )
 from tools.vision_tool import process_produce_photo_ingestion
+from integrations.ims import DemoIMSAdapter
+from routing import classify_inventory
 
 SYSTEM_PROMPT = """
 You are EdiFlow, an autonomous hyper-local food rescue agent.
@@ -45,7 +47,17 @@ if __name__ == "__main__":
     ediflow = create_ediflow_agent()
     
     # Run an autonomous food rescue cycle for local store 'STORE-ACCRA-01'
-    user_prompt = "Process short-dated inventory for store STORE-ACCRA-01 and execute necessary rescue actions."
+    store_id = "STORE-ACCRA-01"
+    snapshot = DemoIMSAdapter().fetch_inventory(store_id, 10)
+    route = classify_inventory(snapshot.inventory)
+    user_prompt = (
+        f"Process short-dated inventory for store {store_id} "
+        "using this deterministic rescue plan. "
+        f"Pantry items (0-5 days): {route['pantry_items']}. "
+        f"Flash-sale items (6-10 days): {route['flash_sale_items']}. "
+        f"Excluded items (>10 days): {route['excluded_items']}. "
+        "Do not move items between categories."
+    )
     
     print(f"\nUser Trigger: {user_prompt}\n" + "-"*50)
     response = ediflow(user_prompt)
