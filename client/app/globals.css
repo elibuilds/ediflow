@@ -67,4 +67,14 @@ h2 { font: 500 43px/1 Fraunces, serif; letter-spacing: -.04em; margin-bottom: 0;
 .auth-panel-page .primary-button:disabled { opacity: .65; cursor: wait; }
 .auth-error { color: #9b4f2c; background: #f8e8df; border-radius: 6px; padding: 10px; font-size: 13px; margin-top: 18px; }
 .auth-message { color: var(--green); background: var(--pale-green); border-radius: 6px; padding: 10px; font-size: 13px; margin-top: 18px; }
+.dashboard-link { color: var(--green); font-size: 13px; font-weight: 600; }
+.dashboard-header { padding-top: 70px; padding-bottom: 42px; }
+.dashboard-header h1 { font-size: clamp(46px, 7vw, 72px); margin-bottom: 18px; }
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding-bottom: 90px; }
+.settings-card { background: #fffdf8; border: 1px solid var(--line); border-radius: 12px; padding: 30px; }
+.settings-card h2 { margin-bottom: 12px; }
+.settings-card label { display: grid; gap: 7px; color: var(--ink); font-size: 13px; font-weight: 600; margin-top: 22px; }
+.settings-card input, .settings-card select { border: 1px solid var(--line); border-radius: 6px; background: var(--cream); color: var(--ink); padding: 12px; font: inherit; }
+.settings-status { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 22px; }
+@media (max-width: 700px) { .settings-grid { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .shell { padding-left: 20px; padding-right: 20px; }.topbar { padding: 0 20px; }.hero { padding-top: 55px; }.hero-note { display: none; }.sale-grid, .metric-grid { grid-template-columns: 1fr; }.store-actions { display: block; }.store-actions .primary-button { margin-top: 20px; width: 100%; }.activity { display: block; }.activity .text-button { margin-top: 10px; }.filter { display: none; } h2 { font-size: 36px; } }

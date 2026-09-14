@@ -34,7 +34,7 @@ export default function LoginPage() {
       setMessage("Account created. Check your email to confirm it, then log in.");
       return;
     }
-    router.push("/");
+    router.push(mode === "login" ? "/dashboard" : "/");
   }
 
   return (
